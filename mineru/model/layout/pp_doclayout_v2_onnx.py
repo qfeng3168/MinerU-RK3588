@@ -222,9 +222,11 @@ class PPDocLayoutV2LayoutModelONNX(PPDocLayoutV2PostProcessor):
         batch_size: int = 1,
         use_paddlex_filter_boxes: Optional[bool] = None,
     ) -> List[List[Dict]]:
-        """按调用方批次合并固定尺寸张量，再逐页后处理并保留输入顺序。"""
+        """按调用方批次合并固定尺寸张量，再逐页后处理并保留输入顺序；rknn 模型固定 batch=1，逐页执行。"""
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
+        if self.small_backend == "rknn":
+            batch_size = 1
         if not images:
             return []
 
