@@ -1,0 +1,98 @@
+name: rk3588-p0-deps
+
+# Phase 0 (RK3588 feasibility): verify MinerU's dependency set resolves and
+# installs on linux-aarch64 (mirrors the target board: Debian 12 / Python 3.11),
+# without touching the board. Round 1 = dependency resolution + install + import
+# smoke test. Results are committed to the ci-results branch because artifact
+# downloads are unreliable from the operator sandbox.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deps-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Environment
+        run: |
+          uname -a
+          python -VV
+          pip --version
+          nproc; free -h | head -2
+
+      - name: Binary-only resolution (find deps lacking aarch64 wheels)
+        id: bincheck
+        continue-on-error: true
+        run: |
+          pip install --dry-run --only-binary=:all: . > bincheck.log 2>&1
+          echo "exit=$?" >> bincheck.log
+
+      - name: Full install (sdists allowed; source builds timed)
+        id: install
+        run: |
+          /usr/bin/time -v pip install . > install.log 2>&1 || true
+          tail -5 install.log
+
+      - name: Smoke test
+        id: smoke
+        continue-on-error: true
+        run: |
+          python -c "import onnxruntime; print('onnxruntime', onnxruntime.__version__, onnxruntime.get_available_providers())" > smoke.log 2>&1
+          python -c "import mineru; print('mineru import OK')" >> smoke.log 2>&1
+          mineru --help >> smoke.log 2>&1 || true
+          head -30 smoke.log
+
+      - name: Build report and publish to ci-results branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "# RK3588 Phase 0 — aarch64 deps check (run ${{ github.run_id }})"
+            echo
+            echo "- runner: ubuntu-24.04-arm, python 3.11 (board mirror: Debian 12 / py3.11)"
+            echo "- binary-only resolution: ${{ steps.bincheck.outcome }}"
+            echo "- full install step: ${{ steps.install.outcome }}"
+            echo "- smoke test: ${{ steps.smoke.outcome }}"
+            echo
+            echo "## binary-only check (deps lacking aarch64 wheels show up here)"
+            echo '```'
+            grep -iE "no matching distribution|error|would install" bincheck.log | head -20 || tail -5 bincheck.log
+            echo '```'
+            echo
+            echo "## installed key packages"
+            echo '```'
+            pip list --format=freeze 2>/dev/null | grep -iE "onnxruntime|numpy|pillow|shapely|pyclipper|tokenizers|pypdfium|gradio|docvortex|mineru" || true
+            echo '```'
+            echo
+            echo "## smoke output"
+            echo '```'
+            head -40 smoke.log || true
+            echo '```'
+            echo
+            echo "## install tail"
+            echo '```'
+            grep -E "Maximum resident|Elapsed \(wall" install.log || true
+            tail -3 install.log
+            echo '```'
+          } > /tmp/p0-report.md
+          git config user.name "rk3588-ci"
+          git config user.email "ci@invalid"
+          git fetch origin ci-results || true
+          git checkout ci-results 2>/dev/null || git checkout --orphan ci-results
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p results/p0-deps/${{ github.run_id }}
+          cp /tmp/p0-report.md results/p0-deps/${{ github.run_id }}/report.md
+          git add results/
+          git commit -m "p0 deps report ${{ github.run_id }}"
+          git push origin ci-results
