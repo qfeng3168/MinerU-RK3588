@@ -65,6 +65,8 @@ jobs:
         run: |
           set -o pipefail
           {
+            echo "== downloading tier models =="
+            mineru-kit models download --tier "${{ inputs.tier }}"
             mineru server start
             ok=0
             for i in $(seq 1 30); do
