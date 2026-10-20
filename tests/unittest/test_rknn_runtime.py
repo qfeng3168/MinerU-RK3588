@@ -8,7 +8,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mineru.model.registry import MINERU_RK3588_MODELS, MODEL_REPOS_BY_NAME, small_model_repo
+from mineru.model.registry import (
+    MINERU_RK3588_MODELS,
+    MINERU_RK3588_VLM_MODELS,
+    MODEL_REPOS_BY_NAME,
+    small_model_repo,
+)
 from mineru.model.runtime import device
 from mineru.model.runtime.rknn import RknnUnavailableError, rknn_available, rknn_session
 
@@ -25,14 +30,17 @@ _PIPELINE_KEYS = (
 
 
 def test_rk3588_repo_registered() -> None:
-    """RK3588 仓库注册进总表，具名路径覆盖 pipeline 全部小模型与 VLM 产物。"""
+    """RK3588 仓库注册进总表：pipeline 仓只含小模型，VLM 产物独立成仓。"""
     assert MODEL_REPOS_BY_NAME["MinerU-4_models_rknn"] is MINERU_RK3588_MODELS
+    assert MODEL_REPOS_BY_NAME["MinerU-4_models_rknn_vlm"] is MINERU_RK3588_VLM_MODELS
     assert small_model_repo("rknn") is MINERU_RK3588_MODELS
     for key in _PIPELINE_KEYS:
         assert key in MINERU_RK3588_MODELS.paths, key
     assert MINERU_RK3588_MODELS.paths["pp_doclayout_v2"].endswith(".rknn")
-    assert MINERU_RK3588_MODELS.paths["vlm_llm"].endswith(".rkllm")
-    assert MINERU_RK3588_MODELS.paths["vlm_vision"].endswith(".rknn")
+    assert "vlm_llm" not in MINERU_RK3588_MODELS.paths
+    assert MINERU_RK3588_VLM_MODELS.paths["vlm_llm"].endswith(".rkllm")
+    assert MINERU_RK3588_VLM_MODELS.paths["vlm_vision"].endswith(".rknn")
+    assert MINERU_RK3588_VLM_MODELS.repos == MINERU_RK3588_MODELS.repos
 
 
 def test_resolve_small_model_backend_rknn(monkeypatch: pytest.MonkeyPatch) -> None:
