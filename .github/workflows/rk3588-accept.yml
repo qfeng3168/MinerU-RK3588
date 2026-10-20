@@ -41,6 +41,7 @@ jobs:
 
       - name: Install mineru
         run: |
+          set -o pipefail
           python -m pip install -U pip
           pip install . 2>&1 | tee /tmp/step-install.log
 
@@ -49,6 +50,8 @@ jobs:
 
       - name: RKNN unit tests
         run: |
+          set -o pipefail
+          pip install pytest
           python -m pytest tests/unittest/test_rknn_runtime.py tests/unittest/test_model_backend_selection.py -o addopts="" -q 2>&1 | tee /tmp/step-pytest.log
 
       - name: Write baseline config (small_backend=onnx)
@@ -60,6 +63,9 @@ jobs:
 
       - name: Parse baseline PDF
         run: |
+          set -o pipefail
+          mineru server start
+          mineru server status
           start=$(date +%s)
           mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee /tmp/accept-parse.log
           end=$(date +%s)
