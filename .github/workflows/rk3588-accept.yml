@@ -75,8 +75,28 @@ jobs:
               sleep 2
             done
             [ "$ok" = "1" ] || { echo "config set never succeeded"; exit 1; }
-            sleep 10
+            echo "== waiting for local parse-server to become healthy =="
+            ready=0
+            for i in $(seq 1 90); do
+              if mineru server status --json 2>/dev/null | python3 -c "
+          import json, sys
+          def find_ps(obj):
+              if isinstance(obj, dict):
+                  if 'parse_server' in obj and isinstance(obj['parse_server'], dict):
+                      return obj['parse_server']
+                  for v in obj.values():
+                      r = find_ps(v)
+                      if r is not None:
+                          return r
+              return None
+          ps = find_ps(json.load(sys.stdin)) or {}
+          local = ps.get('local') or {}
+          sys.exit(0 if local.get('healthy') else 1)
+          "; then ready=1; echo "parse-server healthy after ~$((i * 10))s"; break; fi
+              sleep 10
+            done
             mineru server status
+            [ "$ready" = "1" ] || { echo "parse-server never became healthy"; exit 1; }
           } 2>&1 | tee /tmp/accept-parse.log
           start=$(date +%s)
           mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee -a /tmp/accept-parse.log
