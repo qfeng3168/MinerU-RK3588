@@ -63,6 +63,34 @@ MINERU_4_MODELS_ONNX = ModelRepo(
     },
 )
 
+# RK3588 NPU 模型：同一套小模型的 RKNN 版本加 VLM 的 RKNN/RKLLM 产物。
+# 具名路径与 MINERU_4_MODELS_ONNX 一一对应（*_config 复用同一份 yml），
+# 转换产物由仓库的转换管线产出；huggingface 仓库 id 与 M0 创建的仓库一致。
+MINERU_RK3588_MODELS = ModelRepo(
+    name="MinerU-4_models_rknn",
+    download_mode="required_paths",
+    repos={
+        "huggingface": "qfeng3168/MinerU-RK3588-models",
+    },
+    paths={
+        "pp_doclayout_v2": "Layout/PP-DocLayoutV2_rk3588.rknn",
+        "pp_doclayout_v2_config": "Layout/PP-DocLayoutV2/inference.yml",
+        "ocr_det": "OCR/paddleocr/ch_PP-OCRv6_tiny_det_rk3588.rknn",
+        "ocr_det_config": "OCR/paddleocr/ch_PP-OCRv6_tiny_det_inference.yml",
+        "ocr_rec": "OCR/paddleocr/ch_PP-OCRv6_small_rec_rk3588.rknn",
+        "ocr_rec_config": "OCR/paddleocr/ch_PP-OCRv6_small_rec_inference.yml",
+        "seal_det": "OCR/paddleocr/seal_PP-OCRv4_det_rk3588.rknn",
+        "seal_det_config": "OCR/paddleocr/seal_PP-OCRv4_det_inference.yml",
+        "pp_formulanet_plus_m_weights": "MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_rk3588.rknn",
+        "pp_formulanet_plus_m_config": "MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_inference.yml",
+        "slanet_plus": "Table/slanet-plus_rk3588.rknn",
+        "unet_structure": "Table/unet_rk3588.rknn",
+        "paddle_table_cls": "Table/PP-LCNet_x1_0_table_cls_rk3588.rknn",
+        "vlm_vision": "VLM/qwen2_mineru_vision_672_rk3588.rknn",
+        "vlm_llm": "VLM/mineru2.5-pro-1.2b_w8a8_rk3588.rkllm",
+    },
+)
+
 # llama.cpp 使用 GGUF 主模型与多模态投影文件。
 MINERU_2_5_PRO_2605_1_2B_GGUF = ModelRepo(
     name="MinerU2.5-Pro-2605-1.2B-GGUF",
@@ -81,6 +109,7 @@ MODEL_REPOS: tuple[ModelRepo, ...] = (
     MINERU_4_MODELS_ONNX,
     MINERU_2_5_PRO_2605_1_2B,
     MINERU_2_5_PRO_2605_1_2B_GGUF,
+    MINERU_RK3588_MODELS,
 )
 
 MODEL_REPOS_BY_NAME: dict[str, ModelRepo] = {repo.name: repo for repo in MODEL_REPOS}
@@ -89,6 +118,7 @@ MODEL_REPOS_BY_NAME: dict[str, ModelRepo] = {repo.name: repo for repo in MODEL_R
 _SMALL_MODEL_REPOS: dict[str, ModelRepo] = {
     "onnx": MINERU_4_MODELS_ONNX,
     "torch": MINERU_4_MODELS_TORCH,
+    "rknn": MINERU_RK3588_MODELS,
 }
 _VLM_MODEL_REPOS: dict[str, ModelRepo] = {
     "llama-cpp": MINERU_2_5_PRO_2605_1_2B_GGUF,
@@ -169,6 +199,7 @@ __all__ = [
     "ModelRepo",
     "MINERU_4_MODELS_TORCH",
     "MINERU_4_MODELS_ONNX",
+    "MINERU_RK3588_MODELS",
     "small_model_repo",
     "vlm_model_repo",
     "get_model_repo",
