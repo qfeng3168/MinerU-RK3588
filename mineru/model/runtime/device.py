@@ -47,6 +47,13 @@ def get_device() -> str:
                 return device_name
         except Exception:
             pass
+    try:
+        from .rknn import rknn_available
+
+        if rknn_available():
+            return "rk3588"
+    except Exception:
+        pass
     return "cpu"
 
 
@@ -61,7 +68,7 @@ def module_available(name: str) -> bool:
         return False
 
 
-def resolve_small_model_backend(backend: str | None = None) -> Literal["onnx", "torch"]:
+def resolve_small_model_backend(backend: str | None = None) -> Literal["onnx", "torch", "rknn"]:
     """独立解析小模型后端；显式选择可用于离线下载，依赖由运行入口预检。"""
     from ...config import config
 
@@ -70,8 +77,12 @@ def resolve_small_model_backend(backend: str | None = None) -> Literal["onnx", "
         return "onnx"
     if selected == "torch":
         return "torch"
+    if selected == "rknn":
+        return "rknn"
     if selected != "auto":
-        raise ValueError(f"Unsupported small backend '{selected}'. Expected one of: auto, onnx, torch.")
+        raise ValueError(f"Unsupported small backend '{selected}'. Expected one of: auto, onnx, torch, rknn.")
+    if get_device().split(":")[0] == "rk3588":
+        return "rknn"
     if all(module_available(name) for name in TORCH_REQUIRED_MODULES) and get_device().split(":")[0] != "cpu":
         return "torch"
     return "onnx"
