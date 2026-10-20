@@ -6,15 +6,19 @@ from PIL import Image
 from tqdm import tqdm
 
 from ...registry import small_model_repo
-from ...runtime.onnx import table_ort_session
+from ...runtime.device import resolve_small_model_backend
+from ...runtime.sessions import table_small_model_session
 
 
 class PaddleTableClsModel:
-    def __init__(self, *, model_path: str | None = None) -> None:
-        """加载所选模型栈的表格分类文件，使用表格专用设备策略。"""
+    def __init__(self, *, model_path: str | None = None, small_backend: str | None = None) -> None:
+        """加载所选模型栈的表格分类文件，会话类型由 small_backend 决定。"""
         from ...runtime.contracts import AtomicModelName
 
-        self.sess = table_ort_session(model_path or str(small_model_repo().paddle_table_cls.ensure()))
+        backend = resolve_small_model_backend(small_backend)
+        self.sess = table_small_model_session(
+            backend, model_path or str(small_model_repo(backend).paddle_table_cls.ensure())
+        )
         self.less_length = 256
         self.cw, self.ch = 224, 224
         self.std = [0.229, 0.224, 0.225]
