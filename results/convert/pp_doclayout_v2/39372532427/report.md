@@ -1,4 +1,4 @@
-# RKNN conversion — pp_formulanet_plus_m (run 39372535439)
+# RKNN conversion — pp_doclayout_v2 (run 39372532427)
 
 ```json
 {"status": "conversion failed before report"}
@@ -6,24 +6,25 @@
 
 ## conversion log (tail)
 ```
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 I rknn-toolkit2 version: 2.3.2
 [1;33mW[0m [1;33mload_onnx: If you don't need to crop the model, don't set 'inputs'/'input_size_list'/'outputs'![0m
-I Loading :   0%|                                                           | 0/522 [00:00<?, ?it/s]I Loading :  98%|██████████████████████████████████████████████▏| 513/522 [00:00<00:00, 4349.12it/s]I Loading : 100%|███████████████████████████████████████████████| 522/522 [00:00<00:00, 4410.89it/s]
+[1;31mE[0m [1;31mload_onnx: The size of 'input_size_list' needs to be the same as 'inputs'![0m
+[1;33mW[0m [1;33mload_onnx: ===================== WARN(1) =====================[0m
+[1;31mE[0m [1;31mrknn-toolkit2 version: 2.3.2[0m
 [1;31mE[0m [1;31mload_onnx: Traceback (most recent call last):
   File "rknn/api/rknn_log.py", line 344, in rknn.api.rknn_log.error_catch_decorator.error_catch_wrapper
-  File "rknn/api/rknn_base.py", line 1579, in rknn.api.rknn_base.RKNNBase.load_onnx
-  File "rknn/api/rknn_base.py", line 618, in rknn.api.rknn_base.RKNNBase._create_ir_and_inputs_meta
-  File "rknn/api/ir_graph.py", line 2131, in rknn.api.ir_graph.IRGraph.convert_to_fp32
-AttributeError: 'numpy.ndarray' object has no attribute 'data_type'
+  File "rknn/api/rknn_base.py", line 1507, in rknn.api.rknn_base.RKNNBase.load_onnx
+  File "rknn/api/rknn_log.py", line 95, in rknn.api.rknn_log.RKNNLog.e
+ValueError: The size of 'input_size_list' needs to be the same as 'inputs'!
 [0m
-[1;33mW[0m [1;33mload_onnx: ===================== WARN(1) =====================[0m
+I ===================== WARN(0) =====================
 [1;31mE[0m [1;31mrknn-toolkit2 version: 2.3.2[0m
 Traceback (most recent call last):
   File "rknn/api/rknn_log.py", line 344, in rknn.api.rknn_log.error_catch_decorator.error_catch_wrapper
-  File "rknn/api/rknn_base.py", line 1579, in rknn.api.rknn_base.RKNNBase.load_onnx
-  File "rknn/api/rknn_base.py", line 618, in rknn.api.rknn_base.RKNNBase._create_ir_and_inputs_meta
-  File "rknn/api/ir_graph.py", line 2131, in rknn.api.ir_graph.IRGraph.convert_to_fp32
-AttributeError: 'numpy.ndarray' object has no attribute 'data_type'
+  File "rknn/api/rknn_base.py", line 1507, in rknn.api.rknn_base.RKNNBase.load_onnx
+  File "rknn/api/rknn_log.py", line 95, in rknn.api.rknn_log.RKNNLog.e
+ValueError: The size of 'input_size_list' needs to be the same as 'inputs'!
 
 During handling of the above exception, another exception occurred:
 
@@ -44,9 +45,8 @@ Traceback (most recent call last):
   File "rknn/api/rknn_log.py", line 95, in rknn.api.rknn_log.RKNNLog.e
 ValueError: Traceback (most recent call last):
   File "rknn/api/rknn_log.py", line 344, in rknn.api.rknn_log.error_catch_decorator.error_catch_wrapper
-  File "rknn/api/rknn_base.py", line 1579, in rknn.api.rknn_base.RKNNBase.load_onnx
-  File "rknn/api/rknn_base.py", line 618, in rknn.api.rknn_base.RKNNBase._create_ir_and_inputs_meta
-  File "rknn/api/ir_graph.py", line 2131, in rknn.api.ir_graph.IRGraph.convert_to_fp32
-AttributeError: 'numpy.ndarray' object has no attribute 'data_type'
+  File "rknn/api/rknn_base.py", line 1507, in rknn.api.rknn_base.RKNNBase.load_onnx
+  File "rknn/api/rknn_log.py", line 95, in rknn.api.rknn_log.RKNNLog.e
+ValueError: The size of 'input_size_list' needs to be the same as 'inputs'!
 
 ```
