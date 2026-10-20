@@ -11,7 +11,8 @@ import numpy as np
 from onnxruntime import GraphOptimizationLevel, SessionOptions
 from PIL import Image, ImageDraw, UnidentifiedImageError
 
-from ....runtime.onnx import configure_ort_threads, table_ort_session
+from ....runtime.onnx import configure_ort_threads
+from ....runtime.sessions import table_small_model_session
 
 root_dir = Path(__file__).resolve().parent
 InputType = Union[str, np.ndarray, bytes, Path]
@@ -19,11 +20,12 @@ InputType = Union[str, np.ndarray, bytes, Path]
 
 class OrtInferSession:
     def __init__(self, config: Dict[str, Any]):
-        """保留原有会话选项，并使用统一的表格设备与回退策略。"""
+        """保留原有会话选项，并使用统一的表格设备与回退策略；rknn 后端走 NPU 会话。"""
         self.logger = loguru.logger
         model_path = config.get("model_path", None)
 
-        self.session = table_ort_session(
+        self.session = table_small_model_session(
+            config.get("small_backend"),
             model_path,
             sess_options=self._init_sess_opts(config),
         )
