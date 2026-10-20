@@ -105,10 +105,9 @@ jobs:
           git config user.email "ci@invalid"
           git fetch origin ci-results || true
           git checkout ci-results 2>/dev/null || git checkout --orphan ci-results
-          git rm -rf . >/dev/null 2>&1 || true
           mkdir -p results/convert/${{ inputs.model }}/${{ github.run_id }}
           cp /tmp/convert-report.md results/convert/${{ inputs.model }}/${{ github.run_id }}/report.md
-          git add results/
+          git add results/convert/${{ inputs.model }}/${{ github.run_id }}/report.md
           git commit -m "convert report ${{ inputs.model }} ${{ github.run_id }}"
           # 多个 run 并行发布时推送会竞态失败：pull --rebase 后重试，最多 5 次。
           for attempt in 1 2 3 4 5; do
