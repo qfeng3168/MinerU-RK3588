@@ -65,6 +65,8 @@ jobs:
         run: |
           set -o pipefail
           mineru server start
+          mineru config set parse_server.local.mode managed
+          sleep 15
           mineru server status
           start=$(date +%s)
           mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee /tmp/accept-parse.log
