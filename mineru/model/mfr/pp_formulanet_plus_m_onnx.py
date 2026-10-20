@@ -54,6 +54,8 @@ class PPFormulaNetPlusMONNX:
         """初始化公式模型，会话类型由 small_backend 决定；处理器复用 Torch Plus-M 的纯 Python 实现。"""
         self.device = "cpu"
         self.small_backend = resolve_small_model_backend(small_backend)
+        # RKNN 模型按固定 batch=1 转换，推理时逐张执行。
+        self._max_batch = 1 if self.small_backend == "rknn" else CPU_BATCH_SIZE
         self.session = small_model_session(
             self.small_backend, model_path, device=device, intra_op_num_threads=intra_op_num_threads
         )
@@ -179,7 +181,7 @@ class PPFormulaNetPlusMONNX:
             return results
 
         with tqdm(total=len(valid_inputs), desc="MFR Predict") as pbar:
-            step = min(CPU_BATCH_SIZE, max(1, batch_size))
+            step = min(self._max_batch, max(1, batch_size))
             for start in range(0, len(valid_inputs), step):
                 inputs = np.concatenate(valid_inputs[start : start + step], axis=0).astype(np.float32)
                 preds = self.session.run(None, {self.input_name: inputs})[0]
