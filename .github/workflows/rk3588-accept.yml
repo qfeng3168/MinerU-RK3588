@@ -64,12 +64,20 @@ jobs:
       - name: Parse baseline PDF
         run: |
           set -o pipefail
-          mineru server start
-          mineru config set parse_server.local.mode managed
-          sleep 15
-          mineru server status
+          {
+            mineru server start
+            ok=0
+            for i in $(seq 1 30); do
+              if mineru config set parse_server.local.mode managed; then ok=1; break; fi
+              echo "config set attempt $i failed; server may not be ready, retrying..."
+              sleep 2
+            done
+            [ "$ok" = "1" ] || { echo "config set never succeeded"; exit 1; }
+            sleep 10
+            mineru server status
+          } 2>&1 | tee /tmp/accept-parse.log
           start=$(date +%s)
-          mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee /tmp/accept-parse.log
+          mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee -a /tmp/accept-parse.log
           end=$(date +%s)
           echo "ACCEPT_SECONDS=$((end - start))" >> "$GITHUB_ENV"
 
