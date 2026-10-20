@@ -57,6 +57,35 @@ jobs:
           path: build/rknn/
           retention-days: 90
 
+      - name: Upload to Hugging Face
+        if: ${{ secrets.HF_TOKEN != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from huggingface_hub import HfApi
+
+          api = HfApi()
+          report = json.loads(Path("build/rknn/report.json").read_text())
+          repo = report["hf_repo"]
+          out_dir = Path("build/rknn")
+          uploads = [(out_dir / report["rknn_file"], report["hf_rknn_path"])]
+          uploads.append((out_dir / (report["rknn_file"] + ".inputs.json"), report["hf_rknn_path"] + ".inputs.json"))
+          if report.get("hf_config_path"):
+              uploads.append((out_dir / Path(report["hf_config_path"]).name, report["hf_config_path"]))
+          for local, dest in uploads:
+              api.upload_file(
+                  path_or_fileobj=str(local),
+                  path_in_repo=dest,
+                  repo_id=repo,
+                  repo_type="model",
+                  commit_message=f"add {report['model']} rknn (run ${{ github.run_id }})",
+              )
+              print(f"uploaded {dest}")
+          PY
+
       - name: Publish report to ci-results branch
         if: always()
         run: |
