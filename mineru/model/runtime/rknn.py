@@ -128,7 +128,7 @@ class RknnSession:
                 list(input_feed),
             )
             values = list(input_feed.values())
-        outputs = self._rknn.inference(inputs=values)
+        outputs = self._rknn.inference(inputs=values, data_format=["nchw"] * len(values))
         if outputs is None:
             raise RuntimeError(f"RKNN inference returned no outputs: {self.model_path}")
         return [np.asarray(output) for output in outputs]
