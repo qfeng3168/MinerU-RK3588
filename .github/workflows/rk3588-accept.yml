@@ -1,0 +1,106 @@
+name: rk3588-accept
+
+# ARM64 CPU/onnx 解析基线：为板子 NPU 验收提供逐页对照参照。
+# 只跑 workflow_dispatch 手动触发；产物与报告发布到 ci-results 分支。
+on:
+  workflow_dispatch:
+    inputs:
+      pdf:
+        description: "Demo PDF"
+        type: choice
+        required: true
+        default: demo1
+        options:
+          - demo1
+          - demo2
+      tier:
+        description: "Parse tier"
+        type: choice
+        required: true
+        default: standard
+        options:
+          - flash
+          - basic
+          - standard
+          - advanced
+
+permissions:
+  contents: write
+
+jobs:
+  accept:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install mineru
+        run: |
+          python -m pip install -U pip
+          pip install .
+
+      - name: Smoke test + rknn unit tests
+        run: |
+          mineru --help >/dev/null
+          python -m pytest tests/unittest/test_rknn_runtime.py tests/unittest/test_model_backend_selection.py -o addopts="" -q
+
+      - name: Write baseline config (small_backend=onnx)
+        run: |
+          mkdir -p /tmp/mineru-home
+          printf '{"model": {"small_backend": "onnx"}}' > /tmp/mineru-home/config.json
+          echo "MINERU_CONFIG=/tmp/mineru-home/config.json" >> "$GITHUB_ENV"
+          echo "MINERU_HOME=/tmp/mineru-home" >> "$GITHUB_ENV"
+
+      - name: Parse baseline PDF
+        run: |
+          start=$(date +%s)
+          mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee /tmp/accept-parse.log
+          end=$(date +%s)
+          echo "ACCEPT_SECONDS=$((end - start))" >> "$GITHUB_ENV"
+
+      - name: Build acceptance report
+        run: |
+          {
+            echo "# RKNN acceptance baseline — ${{ inputs.pdf }} (run ${{ github.run_id }})"
+            echo
+            echo "arch: $(uname -m) | tier: ${{ inputs.tier }} | small_backend: onnx | seconds: $ACCEPT_SECONDS"
+            echo
+            echo '```'
+            find /tmp/accept-out -type f | sort
+            echo '```'
+            echo
+            echo "## per-file size/chars"
+            echo '```'
+            for f in $(find /tmp/accept-out -name '*.md' | sort); do
+              echo "$(wc -c < "$f") bytes, $(wc -m < "$f") chars — ${f#/tmp/accept-out/}"
+            done
+            echo '```'
+          } > /tmp/accept-report.md
+          cp /tmp/accept-parse.log /tmp/accept-report-full.log
+          cat /tmp/accept-report.md
+
+      - name: Publish report to ci-results branch
+        if: always()
+        run: |
+          git config user.name "rk3588-ci"
+          git config user.email "ci@invalid"
+          git fetch origin ci-results || true
+          git checkout ci-results 2>/dev/null || git checkout --orphan ci-results
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p results/accept/${{ github.run_id }}
+          cp /tmp/accept-report.md results/accept/${{ github.run_id }}/report.md
+          cp -r /tmp/accept-out results/accept/${{ github.run_id }}/output 2>/dev/null || true
+          git add results/
+          git commit -m "accept report ${{ inputs.pdf }} ${{ inputs.tier }} ${{ github.run_id }}"
+          for attempt in 1 2 3 4 5; do
+            git rebase --abort 2>/dev/null || true
+            git pull --rebase origin ci-results && git push origin ci-results && break
+            echo "publish push attempt $attempt failed; retrying..."
+            sleep $(( (RANDOM % 25) + 5 ))
+          done
+          git push origin ci-results || { echo "publish failed after retries"; exit 1; }
