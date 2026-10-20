@@ -146,7 +146,10 @@ def convert(key: str, spec: ModelSpec, onnx_path: Path, cache_dir: Path, out_dir
         rknn.release()
 
     sidecar = out_dir / (spec.output_name + ".inputs.json")
-    sidecar.write_text(json.dumps(input_names, ensure_ascii=False, indent=2), encoding="utf-8")
+    sidecar.write_text(
+        json.dumps({"input_names": input_names, "input_size": spec.input_size}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     config_md5: str | None = None
     if spec.onnx_config_path and spec.hf_config_path:
