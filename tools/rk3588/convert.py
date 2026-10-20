@@ -116,7 +116,7 @@ def convert(key: str, spec: ModelSpec, onnx_path: Path, out_dir: Path) -> dict[s
         if rknn.init_runtime() != 0:
             raise RuntimeError(f"init_runtime (simulator) failed for {key}")
         dummy = [np.zeros(size, dtype=np.float32) for size in spec.input_size]
-        outputs = rknn.inference(inputs=dummy)
+        outputs = rknn.inference(inputs=dummy, data_format=["nchw"] * len(dummy))
         if outputs is None:
             raise RuntimeError(f"simulator inference returned nothing for {key}")
         output_shapes = [list(out.shape) for out in outputs]
