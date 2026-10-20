@@ -99,7 +99,7 @@ jobs:
             [ "$ready" = "1" ] || { echo "parse-server never became healthy"; exit 1; }
           } 2>&1 | tee /tmp/accept-parse.log
           start=$(date +%s)
-          mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" -o /tmp/accept-out 2>&1 | tee -a /tmp/accept-parse.log
+          mineru parse "demo/pdfs/${{ inputs.pdf }}.pdf" --tier "${{ inputs.tier }}" --wait 1800 -o /tmp/accept-out 2>&1 | tee -a /tmp/accept-parse.log
           end=$(date +%s)
           echo "ACCEPT_SECONDS=$((end - start))" >> "$GITHUB_ENV"
 
