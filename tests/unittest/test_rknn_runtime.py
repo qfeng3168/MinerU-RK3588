@@ -71,7 +71,7 @@ class _FakeLite:
     def init_runtime(self, core_mask: int = 0) -> int:
         return 0
 
-    def inference(self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+    def inference(self, inputs: list[np.ndarray], data_format: list[str] | None = None) -> list[np.ndarray]:
         self.inference_calls.append(inputs)
         return [np.zeros((1, 8), dtype=np.float32), np.zeros((1,), dtype=np.int64)]
 
