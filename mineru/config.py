@@ -501,7 +501,7 @@ class VlmConfig(BaseModel):
 class ModelConfig(BaseModel):
     base_dir: str = _default_path("models")
     source: str = "auto"
-    small_backend: Literal["auto", "onnx", "torch"] = "auto"
+    small_backend: Literal["auto", "onnx", "torch", "rknn"] = "auto"
     vlm: VlmConfig = Field(default_factory=VlmConfig)
 
     @model_validator(mode="before")
