@@ -63,7 +63,7 @@ def test_automatic_platform_combinations(
     assert selector.resolve_vlm_engine("auto") == vlm
 
 
-@pytest.mark.parametrize("small", ["onnx", "torch"])
+@pytest.mark.parametrize("small", ["onnx", "torch", "rknn"])
 @pytest.mark.parametrize("vlm", ["llama-cpp", "vllm", "lmdeploy", "mlx"])
 def test_explicit_cross_backend_downloads_without_installed_engines(
     monkeypatch: pytest.MonkeyPatch, small: str, vlm: str
