@@ -1,0 +1,75 @@
+name: rk3588-convert
+
+# Convert one MinerU pipeline ONNX model to RKNN on an x86_64 runner
+# (rknn-toolkit2 is x86-only; the RK3588 board never converts or compiles).
+# Converted artifacts are kept as workflow artifacts until the HF model repo
+# is ready to receive them; the conversion report is committed to the
+# ci-results branch like the other RK3588 CI checks.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Registry model key"
+        type: choice
+        required: true
+        options:
+          - ocr_det
+          - ocr_rec
+          - seal_det
+          - pp_doclayout_v2
+          - pp_formulanet_plus_m
+          - slanet_plus
+          - unet_structure
+          - paddle_table_cls
+
+permissions:
+  contents: write
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install conversion toolchain
+        run: |
+          pip install --upgrade pip
+          pip install rknn-toolkit2==2.3.2 huggingface_hub onnx numpy
+
+      - name: Convert ${{ inputs.model }} to RKNN
+        run: |
+          python tools/rk3588/convert.py "${{ inputs.model }}" --out-dir build/rknn
+
+      - name: Upload converted artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rknn-${{ inputs.model }}-${{ github.run_id }}
+          path: build/rknn/
+          retention-days: 90
+
+      - name: Publish report to ci-results branch
+        if: always()
+        run: |
+          {
+            echo "# RKNN conversion — ${{ inputs.model }} (run ${{ github.run_id }})"
+            echo
+            echo '```json'
+            cat build/rknn/report.json 2>/dev/null || echo '{"status": "conversion failed before report"}'
+            echo '```'
+          } > /tmp/convert-report.md
+          git config user.name "rk3588-ci"
+          git config user.email "ci@invalid"
+          git fetch origin ci-results || true
+          git checkout ci-results 2>/dev/null || git checkout --orphan ci-results
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p results/convert/${{ inputs.model }}/${{ github.run_id }}
+          cp /tmp/convert-report.md results/convert/${{ inputs.model }}/${{ github.run_id }}/report.md
+          git add results/
+          git commit -m "convert report ${{ inputs.model }} ${{ github.run_id }}"
+          git push origin ci-results
