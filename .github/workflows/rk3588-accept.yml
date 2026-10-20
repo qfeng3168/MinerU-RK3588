@@ -42,12 +42,14 @@ jobs:
       - name: Install mineru
         run: |
           python -m pip install -U pip
-          pip install .
+          pip install . 2>&1 | tee /tmp/step-install.log
 
-      - name: Smoke test + rknn unit tests
+      - name: Smoke test (CLI)
+        run: mineru --help 2>&1 | tee /tmp/step-smoke.log
+
+      - name: RKNN unit tests
         run: |
-          mineru --help >/dev/null
-          python -m pytest tests/unittest/test_rknn_runtime.py tests/unittest/test_model_backend_selection.py -o addopts="" -q
+          python -m pytest tests/unittest/test_rknn_runtime.py tests/unittest/test_model_backend_selection.py -o addopts="" -q 2>&1 | tee /tmp/step-pytest.log
 
       - name: Write baseline config (small_backend=onnx)
         run: |
@@ -64,24 +66,31 @@ jobs:
           echo "ACCEPT_SECONDS=$((end - start))" >> "$GITHUB_ENV"
 
       - name: Build acceptance report
+        if: always()
         run: |
           {
             echo "# RKNN acceptance baseline — ${{ inputs.pdf }} (run ${{ github.run_id }})"
             echo
-            echo "arch: $(uname -m) | tier: ${{ inputs.tier }} | small_backend: onnx | seconds: $ACCEPT_SECONDS"
+            echo "arch: $(uname -m) | tier: ${{ inputs.tier }} | small_backend: onnx | seconds: ${ACCEPT_SECONDS:-n/a}"
             echo
             echo '```'
-            find /tmp/accept-out -type f | sort
+            find /tmp/accept-out -type f 2>/dev/null | sort
             echo '```'
             echo
             echo "## per-file size/chars"
             echo '```'
-            for f in $(find /tmp/accept-out -name '*.md' | sort); do
+            for f in $(find /tmp/accept-out -name '*.md' 2>/dev/null | sort); do
               echo "$(wc -c < "$f") bytes, $(wc -m < "$f") chars — ${f#/tmp/accept-out/}"
             done
             echo '```'
+            for log in /tmp/step-install.log /tmp/step-smoke.log /tmp/step-pytest.log /tmp/accept-parse.log; do
+              echo
+              echo "## tail of $log"
+              echo '```'
+              tail -n 60 "$log" 2>/dev/null || echo "(missing)"
+              echo '```'
+            done
           } > /tmp/accept-report.md
-          cp /tmp/accept-parse.log /tmp/accept-report-full.log
           cat /tmp/accept-report.md
 
       - name: Publish report to ci-results branch
