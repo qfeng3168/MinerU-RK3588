@@ -39,12 +39,16 @@ jobs:
 
       - name: Install conversion toolchain
         run: |
-          pip install --upgrade pip
-          pip install rknn-toolkit2==2.3.2 huggingface_hub onnx numpy
+          set -o pipefail
+          {
+            pip install --upgrade pip
+            pip install rknn-toolkit2==2.3.2 huggingface_hub onnx numpy
+          } 2>&1 | tee /tmp/install.log
 
       - name: Convert ${{ inputs.model }} to RKNN
         run: |
-          python tools/rk3588/convert.py "${{ inputs.model }}" --out-dir build/rknn
+          set -o pipefail
+          python tools/rk3588/convert.py "${{ inputs.model }}" --out-dir build/rknn 2>&1 | tee /tmp/convert.log
 
       - name: Upload converted artifacts
         uses: actions/upload-artifact@v4
@@ -61,6 +65,11 @@ jobs:
             echo
             echo '```json'
             cat build/rknn/report.json 2>/dev/null || echo '{"status": "conversion failed before report"}'
+            echo '```'
+            echo
+            echo "## conversion log (tail)"
+            echo '```'
+            tail -n 120 /tmp/convert.log 2>/dev/null || echo "(no convert log)"
             echo '```'
           } > /tmp/convert-report.md
           git config user.name "rk3588-ci"
