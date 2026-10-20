@@ -23,6 +23,7 @@ class PaddleTableInput:
     model_path: Union[str, Path, None, Dict[str, str]] = None
     use_cuda: bool = False
     device: str = "cpu"
+    small_backend: Optional[str] = None
 
 
 @dataclass
@@ -150,10 +151,13 @@ def escape_html(input_string):
 
 
 class PaddleTableModel(object):
-    def __init__(self, ocr_engine: Any, *, model_path: str | None = None) -> None:
-        """加载所选模型栈的无线表格资源并共享其 OCR 引擎。"""
-        slanet_plus_model_path = model_path or str(small_model_repo().slanet_plus.ensure())
-        input_args = PaddleTableInput(model_type="slanet_plus", model_path=slanet_plus_model_path)
+    def __init__(self, ocr_engine: Any, *, model_path: str | None = None, small_backend: str | None = None) -> None:
+        """加载所选模型栈的无线表格资源并共享其 OCR 引擎，会话类型由 small_backend 决定。"""
+        from ....runtime.device import resolve_small_model_backend
+
+        backend = resolve_small_model_backend(small_backend)
+        slanet_plus_model_path = model_path or str(small_model_repo(backend).slanet_plus.ensure())
+        input_args = PaddleTableInput(model_type="slanet_plus", model_path=slanet_plus_model_path, small_backend=backend)
         self.table_model = PaddleTable(input_args)
         self.ocr_engine = ocr_engine
 
