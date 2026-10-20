@@ -22,15 +22,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ONNX_REPO_ID = "opendatalab/MinerU-4_models_onnx"
+HF_REPO_ID = "q81801/MinerU-RK3588-models"
 
 
 @dataclass(frozen=True)
 class ModelSpec:
-    """单个模型的转换规格：上游 ONNX 相对路径、固定输入形状、产物文件名。"""
+    """单个模型的转换规格：上游 ONNX 相对路径、固定输入形状、产物与 HF 目标路径。"""
 
     onnx_path: str
     input_size: list[list[int]]
     output_name: str
+    hf_rknn_path: str
+    onnx_config_path: str | None = None
+    hf_config_path: str | None = None
 
 
 MODEL_SPECS: dict[str, ModelSpec] = {
@@ -38,41 +42,59 @@ MODEL_SPECS: dict[str, ModelSpec] = {
         onnx_path="OCR/paddleocr/ch_PP-OCRv6_tiny_det_infer.onnx",
         input_size=[[1, 3, 640, 640]],
         output_name="ch_PP-OCRv6_tiny_det_rk3588.rknn",
+        hf_rknn_path="OCR/paddleocr/ch_PP-OCRv6_tiny_det_rk3588.rknn",
+        onnx_config_path="OCR/paddleocr/ch_PP-OCRv6_tiny_det_inference.yml",
+        hf_config_path="OCR/paddleocr/ch_PP-OCRv6_tiny_det_inference.yml",
     ),
     "ocr_rec": ModelSpec(
         onnx_path="OCR/paddleocr/ch_PP-OCRv6_small_rec_infer.onnx",
         input_size=[[1, 3, 48, 320]],
         output_name="ch_PP-OCRv6_small_rec_rk3588.rknn",
+        hf_rknn_path="OCR/paddleocr/ch_PP-OCRv6_small_rec_rk3588.rknn",
+        onnx_config_path="OCR/paddleocr/ch_PP-OCRv6_small_rec_inference.yml",
+        hf_config_path="OCR/paddleocr/ch_PP-OCRv6_small_rec_inference.yml",
     ),
     "seal_det": ModelSpec(
         onnx_path="OCR/paddleocr/seal_PP-OCRv4_det_infer.onnx",
         input_size=[[1, 3, 640, 640]],
         output_name="seal_PP-OCRv4_det_rk3588.rknn",
+        hf_rknn_path="OCR/paddleocr/seal_PP-OCRv4_det_rk3588.rknn",
+        onnx_config_path="OCR/paddleocr/seal_PP-OCRv4_det_inference.yml",
+        hf_config_path="OCR/paddleocr/seal_PP-OCRv4_det_inference.yml",
     ),
     "pp_doclayout_v2": ModelSpec(
         onnx_path="Layout/PP-DocLayoutV2/inference.onnx",
         input_size=[[1, 3, 800, 800]],
         output_name="PP-DocLayoutV2_rk3588.rknn",
+        hf_rknn_path="Layout/PP-DocLayoutV2_rk3588.rknn",
+        onnx_config_path="Layout/PP-DocLayoutV2/inference.yml",
+        hf_config_path="Layout/PP-DocLayoutV2/inference.yml",
     ),
     "pp_formulanet_plus_m": ModelSpec(
         onnx_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M.onnx",
         input_size=[[1, 3, 384, 384]],
         output_name="PP-FormulaNet_plus-M_rk3588.rknn",
+        hf_rknn_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_rk3588.rknn",
+        onnx_config_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_inference.yml",
+        hf_config_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_inference.yml",
     ),
     "slanet_plus": ModelSpec(
         onnx_path="Table/slanet-plus.onnx",
         input_size=[[1, 3, 488, 488]],
         output_name="slanet-plus_rk3588.rknn",
+        hf_rknn_path="Table/slanet-plus_rk3588.rknn",
     ),
     "unet_structure": ModelSpec(
         onnx_path="Table/unet.onnx",
         input_size=[[1, 3, 768, 768]],
         output_name="unet_rk3588.rknn",
+        hf_rknn_path="Table/unet_rk3588.rknn",
     ),
     "paddle_table_cls": ModelSpec(
         onnx_path="Table/PP-LCNet_x1_0_table_cls.onnx",
         input_size=[[1, 3, 224, 224]],
         output_name="PP-LCNet_x1_0_table_cls_rk3588.rknn",
+        hf_rknn_path="Table/PP-LCNet_x1_0_table_cls_rk3588.rknn",
     ),
 }
 
@@ -93,7 +115,7 @@ def download_onnx(spec: ModelSpec, cache_dir: Path) -> Path:
     return Path(local)
 
 
-def convert(key: str, spec: ModelSpec, onnx_path: Path, out_dir: Path) -> dict[str, object]:
+def convert(key: str, spec: ModelSpec, onnx_path: Path, cache_dir: Path, out_dir: Path) -> dict[str, object]:
     """执行一次转换并做模拟器自检，返回可 JSON 序列化的转换报告。"""
     import numpy as np
     import onnx
@@ -125,6 +147,18 @@ def convert(key: str, spec: ModelSpec, onnx_path: Path, out_dir: Path) -> dict[s
 
     sidecar = out_dir / (spec.output_name + ".inputs.json")
     sidecar.write_text(json.dumps(input_names, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    config_md5: str | None = None
+    if spec.onnx_config_path and spec.hf_config_path:
+        from huggingface_hub import hf_hub_download
+
+        config_local = Path(
+            hf_hub_download(repo_id=ONNX_REPO_ID, filename=spec.onnx_config_path, local_dir=str(cache_dir))
+        )
+        config_target = out_dir / Path(spec.hf_config_path).name
+        config_target.write_bytes(config_local.read_bytes())
+        config_md5 = _md5(config_target)
+
     return {
         "model": key,
         "onnx_repo": ONNX_REPO_ID,
@@ -137,6 +171,10 @@ def convert(key: str, spec: ModelSpec, onnx_path: Path, out_dir: Path) -> dict[s
         "input_size": spec.input_size,
         "quantization": "none (fp)",
         "selfcheck_output_shapes": output_shapes,
+        "hf_repo": HF_REPO_ID,
+        "hf_rknn_path": spec.hf_rknn_path,
+        "hf_config_path": spec.hf_config_path,
+        "config_md5": config_md5,
     }
 
 
@@ -149,8 +187,9 @@ def main() -> int:
 
     spec = MODEL_SPECS[args.model]
     out_dir = Path(args.out_dir)
-    onnx_path = download_onnx(spec, Path(args.cache_dir))
-    report = convert(args.model, spec, onnx_path, out_dir)
+    cache_dir = Path(args.cache_dir)
+    onnx_path = download_onnx(spec, cache_dir)
+    report = convert(args.model, spec, onnx_path, cache_dir, out_dir)
     (out_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
