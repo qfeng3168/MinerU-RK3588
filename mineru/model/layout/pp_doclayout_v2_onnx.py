@@ -21,7 +21,8 @@ from PIL import Image
 from tqdm import tqdm
 
 from ..ocr.image import rgb_to_bgr
-from ..runtime.onnx import ort_session
+from ..runtime.device import resolve_small_model_backend
+from ..runtime.sessions import small_model_session
 from .pp_doclayout_v2_base import DEFAULT_CLASS_THRESHOLDS, PP_DOCLAYOUT_V2_LABELS, PPDocLayoutV2PostProcessor
 
 __all__ = ["PPDocLayoutV2LayoutModelONNX"]
@@ -51,9 +52,11 @@ class PPDocLayoutV2LayoutModelONNX(PPDocLayoutV2PostProcessor):
         use_paddlex_filter_boxes: bool = True,
         intra_op_num_threads: int = 0,
         config_path: str | None = None,
+        small_backend: str | None = None,
     ) -> None:
-        """加载 CPU 检测图及官方预处理配置，检测筛选使用官方分类阈值。"""
+        """加载检测图及官方预处理配置，会话类型由 small_backend 决定。"""
         self.device = "cpu"
+        self.small_backend = resolve_small_model_backend(small_backend)
         self.use_paddlex_filter_boxes = use_paddlex_filter_boxes
         self.model_path = str(weight)
         self.imgsz = imgsz
@@ -66,7 +69,9 @@ class PPDocLayoutV2LayoutModelONNX(PPDocLayoutV2PostProcessor):
             self.imgsz = tuple(resize["target_size"])
             self.interpolation = int(resize["interp"])
         self.rescale_factor = 1.0 / 255.0
-        self.session = ort_session(self.model_path, device, intra_op_num_threads)
+        self.session = small_model_session(
+            self.small_backend, self.model_path, device=device, intra_op_num_threads=intra_op_num_threads
+        )
         self._input_names = [i.name for i in self.session.get_inputs()]
         self._output_name = self.session.get_outputs()[0].name
         logger.debug(
