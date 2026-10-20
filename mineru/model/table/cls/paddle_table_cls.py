@@ -16,6 +16,7 @@ class PaddleTableClsModel:
         from ...runtime.contracts import AtomicModelName
 
         backend = resolve_small_model_backend(small_backend)
+        self.small_backend = backend
         self.sess = table_small_model_session(
             backend, model_path or str(small_model_repo(backend).paddle_table_cls.ensure())
         )
@@ -132,6 +133,8 @@ class PaddleTableClsModel:
         return x
 
     def batch_predict(self, img_info_list, batch_size=16):
+        if self.small_backend == "rknn":
+            batch_size = 1  # RKNN 模型固定 batch=1 转换，逐图分类。
         imgs = [item["wired_table_img"] for item in img_info_list]
         imgs = self.list_2_batch(imgs, batch_size=batch_size)
         label_res = []
