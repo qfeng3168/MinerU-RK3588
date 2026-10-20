@@ -73,7 +73,8 @@ MODEL_SPECS: dict[str, ModelSpec] = {
     ),
     "pp_formulanet_plus_m": ModelSpec(
         onnx_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M.onnx",
-        input_size=[[1, 3, 384, 384]],
+        # 验图实证：真输入 encoder/image 为单通道灰度 [N,1,384,384]
+        input_size=[[1, 1, 384, 384]],
         output_name="PP-FormulaNet_plus-M_rk3588.rknn",
         hf_rknn_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_rk3588.rknn",
         onnx_config_path="MFR/pp_formulanet_plus_m/PP-FormulaNet_plus-M_inference.yml",
