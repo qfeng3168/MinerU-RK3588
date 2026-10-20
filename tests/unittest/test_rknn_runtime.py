@@ -79,12 +79,8 @@ class _FakeLite:
         return None
 
 
-def test_rknn_session_feed_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """多输入按 sidecar 声明顺序展开 feed，与 onnxruntime 的 dict 喂入行为等价。"""
-    model = tmp_path / "layout_rk3588.rknn"
-    model.write_bytes(b"fake")
-    (tmp_path / (model.name + ".inputs.json")).write_text(json.dumps(["image", "scale_factor"]), encoding="utf-8")
-
+def _install_fake_lite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """安装最小 RKNNLite 桩：记录推理入参，返回固定两路输出。"""
     fake_api = types.ModuleType("rknnlite.api")
     fake_api.RKNNLite = _FakeLite  # type: ignore[attr-defined]
     fake_package = types.ModuleType("rknnlite")
@@ -93,14 +89,65 @@ def test_rknn_session_feed_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setitem(sys.modules, "rknnlite.api", fake_api)
     monkeypatch.setattr(device, "module_available", lambda name: name == "rknnlite")
 
+
+def test_rknn_session_feed_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """多输入按 sidecar 声明顺序展开 feed，与 onnxruntime 的 dict 喂入行为等价。"""
+    model = tmp_path / "layout_rk3588.rknn"
+    model.write_bytes(b"fake")
+    (tmp_path / (model.name + ".inputs.json")).write_text(
+        json.dumps({"input_names": ["image", "scale_factor"], "input_size": [[1, 3, 800, 800], [1, 2]]}),
+        encoding="utf-8",
+    )
+    _install_fake_lite(monkeypatch)
+
     session = rknn_session(str(model))
     assert [node.name for node in session.get_inputs()] == ["image", "scale_factor"]
+    assert session.get_inputs()[0].shape == (1, 3, 800, 800)
+    assert session.input_size == [[1, 3, 800, 800], [1, 2]]
+    # 探测缓存了真实输出形状。
+    assert [node.shape for node in session.get_outputs()] == [(1, 8), (1,)]
     image = np.zeros((1, 3, 800, 800), dtype=np.float32)
     scale = np.ones((1, 2), dtype=np.float32)
     outputs = session.run(None, {"scale_factor": scale, "image": image})
     assert len(outputs) == 2
     assert outputs[0].shape == (1, 8)
     lite = session._rknn  # noqa: SLF001 - 验证桩的实际入参顺序
-    assert lite.inference_calls[0][0] is image
-    assert lite.inference_calls[0][1] is scale
+    assert lite.inference_calls[-1][0] is image
+    assert lite.inference_calls[-1][1] is scale
     session.release()
+
+
+def test_rknn_session_legacy_name_list_sidecar(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧格式 sidecar（仅名字数组）仍可读，形状为 None，推理与 OCR det 固定尺寸不受影响。"""
+    model = tmp_path / "det_rk3588.rknn"
+    model.write_bytes(b"fake")
+    (tmp_path / (model.name + ".inputs.json")).write_text(json.dumps(["x"]), encoding="utf-8")
+    _install_fake_lite(monkeypatch)
+
+    session = rknn_session(str(model))
+    assert [node.name for node in session.get_inputs()] == ["x"]
+    assert session.get_inputs()[0].shape is None
+    assert session.input_size == [None]
+    session.release()
+
+
+def test_session_factory_dispatches_by_backend(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """会话工厂按 backend 分发：rknn 造 RKNN 会话，其余仍走 onnxruntime。"""
+    from mineru.model.runtime import sessions
+    from mineru.model.runtime.rknn import RknnSession
+
+    model = tmp_path / "det_rk3588.rknn"
+    model.write_bytes(b"fake")
+    (tmp_path / (model.name + ".inputs.json")).write_text(
+        json.dumps({"input_names": ["x"], "input_size": [[1, 3, 640, 640]]}), encoding="utf-8"
+    )
+    _install_fake_lite(monkeypatch)
+
+    rknn = sessions.small_model_session("rknn", str(model))
+    assert isinstance(rknn, RknnSession)
+    marker = object()
+    monkeypatch.setattr(sessions, "ort_session", lambda *args, **kwargs: marker)
+    assert sessions.small_model_session("onnx", "whatever.onnx") is marker
+    table_marker = object()
+    monkeypatch.setattr(sessions, "table_ort_session", lambda *args, **kwargs: table_marker)
+    assert sessions.table_small_model_session("onnx", "whatever.onnx") is table_marker
