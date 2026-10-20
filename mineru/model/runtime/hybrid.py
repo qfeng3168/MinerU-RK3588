@@ -15,7 +15,7 @@ from ...utils.timing import stage_timer
 
 from ..ocr.language import normalize_ocr_model_lang
 from ..ocr.resources import PPOCRV6_DICT_PATH
-from ..registry import MINERU_4_MODELS_ONNX, small_model_repo
+from ..registry import small_model_repo
 from .contracts import AtomicModelName
 
 if TYPE_CHECKING:
@@ -104,7 +104,9 @@ def table_cls_model_init(small_backend: str | None = None) -> PaddleTableClsMode
     """初始化有线与无线表格类型分类模型。"""
     from ..table.cls.paddle_table_cls import PaddleTableClsModel
 
-    return PaddleTableClsModel(model_path=str(small_model_repo(small_backend).paddle_table_cls.ensure()))
+    return PaddleTableClsModel(
+        model_path=str(small_model_repo(small_backend).paddle_table_cls.ensure()), small_backend=small_backend
+    )
 
 
 def wired_table_model_init(
@@ -123,7 +125,11 @@ def wired_table_model_init(
         lang=lang,
         enable_merge_det_boxes=False,
     )
-    table_model = UnetTableModel(ocr_engine, model_path=str(small_model_repo(small_backend).unet_structure.ensure()))
+    table_model = UnetTableModel(
+        ocr_engine,
+        model_path=str(small_model_repo(small_backend).unet_structure.ensure()),
+        small_backend=small_backend,
+    )
     return table_model
 
 
@@ -143,7 +149,11 @@ def wireless_table_model_init(
         lang=lang,
         enable_merge_det_boxes=False,
     )
-    table_model = PaddleTableModel(ocr_engine, model_path=str(small_model_repo(small_backend).slanet_plus.ensure()))
+    table_model = PaddleTableModel(
+        ocr_engine,
+        model_path=str(small_model_repo(small_backend).slanet_plus.ensure()),
+        small_backend=small_backend,
+    )
     return table_model
 
 
@@ -249,13 +259,15 @@ def atom_model_init(model_name: str, **kwargs: Any) -> Any:
         initialize_torch_threads()
     atom_model = None
     if model_name == AtomicModelName.Layout:
-        if small_backend == "onnx":
+        if small_backend in ("onnx", "rknn"):
             from ..layout.pp_doclayout_v2_onnx import PPDocLayoutV2LayoutModelONNX
 
+            repo = small_model_repo(small_backend)
             atom_model = PPDocLayoutV2LayoutModelONNX(
-                weight=str(MINERU_4_MODELS_ONNX.pp_doclayout_v2.ensure()),
-                config_path=str(MINERU_4_MODELS_ONNX.pp_doclayout_v2_config.ensure()),
+                weight=str(repo.pp_doclayout_v2.ensure()),
+                config_path=str(repo.pp_doclayout_v2_config.ensure()),
                 device=kwargs.get("device"),
+                small_backend=small_backend,
             )
         else:
             from ..registry import MINERU_4_MODELS_TORCH
@@ -265,13 +277,15 @@ def atom_model_init(model_name: str, **kwargs: Any) -> Any:
                 kwargs.get("device"),
             )
     elif model_name == AtomicModelName.MFR:
-        if small_backend == "onnx":
+        if small_backend in ("onnx", "rknn"):
             from ..mfr.pp_formulanet_plus_m_onnx import PPFormulaNetPlusMONNX
 
+            repo = small_model_repo(small_backend)
             atom_model = PPFormulaNetPlusMONNX(
-                model_path=str(MINERU_4_MODELS_ONNX.pp_formulanet_plus_m_weights.ensure()),
-                config_path=str(MINERU_4_MODELS_ONNX.pp_formulanet_plus_m_config.ensure()),
+                model_path=str(repo.pp_formulanet_plus_m_weights.ensure()),
+                config_path=str(repo.pp_formulanet_plus_m_config.ensure()),
                 device=kwargs.get("device"),
+                small_backend=small_backend,
             )
         else:
             from ..registry import MINERU_4_MODELS_TORCH
@@ -284,21 +298,23 @@ def atom_model_init(model_name: str, **kwargs: Any) -> Any:
                 kwargs.get("device"),
             )
     elif model_name == AtomicModelName.OCR:
-        if small_backend == "onnx":
+        if small_backend in ("onnx", "rknn"):
             from ..ocr.pp_ocr_v6_onnx import PPOCRv6ONNX
 
+            repo = small_model_repo(small_backend)
             lang = normalize_ocr_model_lang(kwargs.get("lang"))
-            detector = MINERU_4_MODELS_ONNX.seal_det if lang == "seal" else MINERU_4_MODELS_ONNX.ocr_det
+            detector = repo.seal_det if lang == "seal" else repo.ocr_det
 
             atom_model = PPOCRv6ONNX(
                 det_model_path=str(detector.ensure()),
-                rec_model_path=str(MINERU_4_MODELS_ONNX.ocr_rec.ensure()),
+                rec_model_path=str(repo.ocr_rec.ensure()),
                 dict_path=str(PPOCRV6_DICT_PATH),
                 lang=lang,
                 device=kwargs.get("device"),
                 det_db_box_thresh=kwargs.get("det_db_box_thresh", 0.5),
                 det_db_unclip_ratio=kwargs.get("det_db_unclip_ratio", 1.5),
                 enable_merge_det_boxes=kwargs.get("enable_merge_det_boxes", True),
+                small_backend=small_backend,
             )
         else:
             atom_model = ocr_model_init(
@@ -364,7 +380,7 @@ class HybridLocalModelContextSingleton:
 
 def ocr_det_batch_setting() -> bool:
     """根据运行设备和 PyTorch 版本确定是否启用 OCR 检测批处理。"""
-    if resolve_small_model_backend() == "onnx":
+    if resolve_small_model_backend() in ("onnx", "rknn"):
         return True
 
     try:
