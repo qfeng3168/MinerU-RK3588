@@ -1,11 +1,12 @@
 # Copyright (c) Opendatalab. All rights reserved.
 """RK3588 NPU 推理会话（rknn-toolkit-lite2），接口与 runtime/onnx.py 对齐。
 
-消费者只依赖三件事：``get_inputs()`` / ``get_outputs()`` 返回带 ``name`` 的节点
-描述；``run(output_names, input_feed)`` 按输入名喂入并返回 ndarray 列表。
-RKNNLite 仅接受位置输入，多输入模型的输入顺序由转换管线在 .rknn 同目录写出的
-``<model>.rknn.inputs.json``（字符串数组）声明；缺失时单输入按唯一值展开，
-多输入回退到 feed 的插入顺序并记录警告。
+消费者只依赖三件事：``get_inputs()`` / ``get_outputs()`` 返回带 ``name`` 与
+``shape`` 的节点描述；``run(output_names, input_feed)`` 按输入名喂入并返回
+ndarray 列表。RKNNLite 仅接受位置输入，多输入模型的输入顺序与固定输入形状
+由转换管线在 .rknn 同目录写出的 ``<model>.rknn.inputs.json`` 声明
+（``{"input_names": [...], "input_size": [[...]]}``；历史上只有名字数组的
+旧格式仍可读，但没有形状）。输出形状在加载时用零输入探测一次获得。
 """
 
 from __future__ import annotations
@@ -31,9 +32,10 @@ class RknnUnavailableError(RuntimeError):
 
 @dataclass(frozen=True)
 class _IONode:
-    """与 onnxruntime NodeArg 对齐的最小节点描述，消费者只读取 ``name``。"""
+    """与 onnxruntime NodeArg 对齐的最小节点描述，消费者读取 ``name`` 与 ``shape``。"""
 
     name: str
+    shape: tuple[int, ...] | None = None
 
 
 def rknn_available() -> bool:
@@ -43,15 +45,23 @@ def rknn_available() -> bool:
     return module_available("rknnlite")
 
 
-def _load_input_names(model_path: Path) -> list[str]:
-    """读取转换管线写出的输入名清单；不存在时返回空列表。"""
+def _load_sidecar(model_path: Path) -> tuple[list[str], list[list[int]]]:
+    """读取转换管线写出的输入清单（名字 + 固定形状）；不存在时返回两个空列表。"""
     sidecar = model_path.parent / (model_path.name + _INPUT_NAMES_SUFFIX)
     if not sidecar.is_file():
-        return []
-    names = json.loads(sidecar.read_text(encoding="utf-8"))
+        return [], []
+    data = json.loads(sidecar.read_text(encoding="utf-8"))
+    if isinstance(data, list):  # 旧格式：仅有输入名数组。
+        if not all(isinstance(name, str) for name in data):
+            raise ValueError(f"Invalid RKNN input name list: {sidecar}")
+        return list(data), []
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid RKNN inputs sidecar: {sidecar}")
+    names = data.get("input_names")
+    sizes = data.get("input_size") or []
     if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
         raise ValueError(f"Invalid RKNN input name list: {sidecar}")
-    return names
+    return list(names), [list(size) for size in sizes]
 
 
 class RknnSession:
@@ -81,15 +91,20 @@ class RknnSession:
             raise ValueError("MINERU_RKNN_CORE_MASK must be one of: auto, 0, 1, 2, 0_1_2")
         if self._rknn.init_runtime(core_mask=masks[mask_key]) != 0:
             raise RknnUnavailableError(f"Failed to initialize RKNN runtime for: {self.model_path}")
-        input_names = _load_input_names(Path(self.model_path))
+        input_names, input_sizes = _load_sidecar(Path(self.model_path))
         input_count, output_count = self._io_counts(len(input_names))
-        self._inputs = [_IONode(name) for name in input_names] or [_IONode(f"input_{i}") for i in range(input_count)]
-        self._outputs = [_IONode(f"output_{i}") for i in range(output_count)]
+        names = [*(input_names or []), *[f"input_{i}" for i in range(input_count)]][:input_count]
+        sizes = [*(input_sizes or []), *[None] * input_count][:input_count]
+        self._input_sizes: list[list[int] | None] = sizes
+        self._inputs = [
+            _IONode(name, tuple(size) if size else None) for name, size in zip(names, sizes, strict=True)
+        ]
+        self._outputs = self._probe_output_shapes(output_count)
         logger.info(
             "RKNN ready: model={}, inputs={}, outputs={}, core_mask={}",
             Path(self.model_path).name,
-            [node.name for node in self._inputs],
-            [node.name for node in self._outputs],
+            [(node.name, node.shape) for node in self._inputs],
+            [(node.name, node.shape) for node in self._outputs],
             mask_key,
         )
 
@@ -103,6 +118,28 @@ class RknnSession:
             except Exception:
                 pass
         return known_inputs or 1, 1
+
+    def _probe_output_shapes(self, output_count: int) -> list[_IONode]:
+        """用 sidecar 声明的固定输入形状做一次零输入探测，得到真实输出形状。
+
+        RKNNLite 不提供输出形状查询；sidecar 缺少形状时退化为无形状描述。
+        探测失败说明模型在当前运行时不可用，直接报错而不是带病加载。
+        """
+        if not self._input_sizes or any(size is None for size in self._input_sizes):
+            return [_IONode(f"output_{i}") for i in range(output_count)]
+        dummy = [np.zeros(size, dtype=np.float32) for size in self._input_sizes if size is not None]
+        try:
+            outputs = self._rknn.inference(inputs=dummy, data_format=["nchw"] * len(dummy))
+        except Exception as exc:
+            raise RknnUnavailableError(f"RKNN probe inference failed for {self.model_path}: {exc}") from exc
+        if outputs is None:
+            raise RknnUnavailableError(f"RKNN probe inference returned no outputs: {self.model_path}")
+        return [_IONode(f"output_{i}", tuple(np.asarray(out).shape)) for i, out in enumerate(outputs)]
+
+    @property
+    def input_size(self) -> list[list[int] | None]:
+        """sidecar 声明的固定输入形状（与输入顺序一致），缺失位置为 None。"""
+        return list(self._input_sizes)
 
     def get_inputs(self) -> list[_IONode]:
         """返回输入节点描述，顺序即 RKNN 的位置输入顺序。"""
