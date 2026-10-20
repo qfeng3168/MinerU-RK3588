@@ -42,7 +42,7 @@ jobs:
           set -o pipefail
           {
             pip install --upgrade pip
-            pip install rknn-toolkit2==2.3.2 huggingface_hub onnx numpy
+            pip install rknn-toolkit2==2.3.2 "onnx==1.16.1" huggingface_hub numpy
           } 2>&1 | tee /tmp/install.log
 
       - name: Convert ${{ inputs.model }} to RKNN
