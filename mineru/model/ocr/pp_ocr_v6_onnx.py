@@ -21,10 +21,12 @@ from pathlib import Path
 from typing import Any, List, Literal, Optional, Tuple, Union
 
 import numpy as np
+from docvortex.image import resize_image
 from loguru import logger
 from tqdm import tqdm
 
-from ..runtime.onnx import ort_session
+from ..runtime.device import resolve_small_model_backend
+from ..runtime.sessions import small_model_session
 from .._internal.pytorchocr.data.imaug.operators import DetResizeForTest, NormalizeImage
 from .db_postprocess import DBPostProcess
 from .resources import PPOCRV6_DICT_PATH
@@ -81,10 +83,21 @@ class TextDetectorONNX:
         use_dilation: bool = False,
         box_type: Literal["quad", "poly"] = "quad",
         intra_op_num_threads: int = 0,
+        small_backend: str | None = None,
     ) -> None:
-        """加载 CPU ONNX 会话并设置推理参数。"""
-        self.session = ort_session(model_path, device, intra_op_num_threads)
+        """加载推理会话并设置推理参数；small_backend 为 rknn 时会话走 NPU 且推理逐图执行。"""
+        self.small_backend = resolve_small_model_backend(small_backend)
+        self.session = small_model_session(
+            self.small_backend, model_path, device=device, intra_op_num_threads=intra_op_num_threads
+        )
         self.input_name = self.session.get_inputs()[0].name
+        # RKNN 模型按固定 batch=1 转换：从 sidecar 声明的固定输入形状取 (w, h)，
+        # 预处理改为固定尺寸缩放，_run_det_batch 逐图推理。
+        self._fixed_size: tuple[int, int] | None = None
+        if self.small_backend == "rknn":
+            shape = self.session.get_inputs()[0].shape
+            if shape is not None and len(shape) == 4:
+                self._fixed_size = (int(shape[3]), int(shape[2]))
 
         self.limit_side_len = limit_side_len
         self.limit_type = limit_type
@@ -115,9 +128,14 @@ class TextDetectorONNX:
 
     # ---- 预处理 ----
     def _resize_image(self, img: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[Tuple[float, float]]]:
-        """复用 Torch 路径的纯 NumPy/OpenCV 缩放逻辑。"""
+        """复用 Torch 路径的纯 NumPy/OpenCV 缩放逻辑；rknn 后端用模型固定尺寸。"""
         if img.size == 0 or min(img.shape[:2]) == 0:
             return None, None
+        if self._fixed_size is not None:
+            src_h, src_w = img.shape[:2]
+            width, height = self._fixed_size
+            resized = resize_image(img, (width, height), interpolation="linear")
+            return resized, (height / src_h, width / src_w)
         resized, ratios = self.resize_op.resize_image_type0(img)
         return resized, tuple(ratios)
 
@@ -176,10 +194,16 @@ class TextDetectorONNX:
         return self.batch_predict([img], max_batch_size=1)[0]
 
     def _run_det_batch(self, items: list[tuple[int, np.ndarray, np.ndarray, float]]) -> list[tuple[int, DetectionBoxes, float]]:
-        """执行同尺寸检测批次；共享推理耗时均摊到各图，后处理使用各自原图信息。"""
-        pixels = np.concatenate([item[1] for item in items], axis=0)
+        """执行同尺寸检测批次；rknn 模型固定 batch=1，逐图推理后拼接复用统一后处理。"""
         started = time.perf_counter()
-        predictions = self.session.run(None, {self.input_name: pixels})[0]
+        if self._fixed_size is not None:
+            predictions = np.concatenate(
+                [self.session.run(None, {self.input_name: item[1]})[0] for item in items],
+                axis=0,
+            )
+        else:
+            pixels = np.concatenate([item[1] for item in items], axis=0)
+            predictions = self.session.run(None, {self.input_name: pixels})[0]
         elapsed = (time.perf_counter() - started) / len(items)
         if predictions.ndim != 4 or predictions.shape[0] != len(items):
             raise ValueError("OCR detector output batch does not match input batch")
@@ -260,13 +284,17 @@ class TextRecognizerONNX:
         rec_batch_num: int = 6,
         drop_score: float = 0.5,
         intra_op_num_threads: int = 0,
+        small_backend: str | None = None,
     ) -> None:
-        """加载 CPU ONNX 会话并设置推理参数。"""
-        self.session = ort_session(model_path, device, intra_op_num_threads)
+        """加载推理会话并设置推理参数；rknn 模型固定 batch=1，识别逐条执行。"""
+        self.small_backend = resolve_small_model_backend(small_backend)
+        self.session = small_model_session(
+            self.small_backend, model_path, device=device, intra_op_num_threads=intra_op_num_threads
+        )
         self.input_name = self.session.get_inputs()[0].name
 
         self.img_c, self.img_h, self.img_w = rec_image_shape
-        self.rec_batch_num = rec_batch_num
+        self.rec_batch_num = 1 if self.small_backend == "rknn" else rec_batch_num
         self.drop_score = drop_score
 
         # 字符表: ["blank"] + dict_chars + [" "]
@@ -274,7 +302,8 @@ class TextRecognizerONNX:
         chars = _load_character_dict(dict_path)
         self.character = ["blank"] + chars + [" "]
         outputs = self.session.get_outputs()
-        classes = outputs[0].shape[-1]
+        output_shape = outputs[0].shape
+        classes = output_shape[-1] if output_shape else None
         if isinstance(classes, int) and classes != len(self.character):
             raise ValueError(f"OCR CTC output has {classes} classes but dictionary requires {len(self.character)}")
 
@@ -373,13 +402,15 @@ class PPOCRv6ONNX:
         rec_batch_num: int = 6,
         intra_op_num_threads: int = 0,
         lang: Literal["ch", "seal"] = "ch",
+        small_backend: str | None = None,
     ) -> None:
-        """按普通文字或印章模式初始化 CPU 检测与识别模型。"""
+        """按普通文字或印章模式初始化检测与识别模型，会话类型由 small_backend 决定。"""
         if lang not in {"ch", "seal"}:
             raise ValueError(f"Unsupported ONNX OCR mode: {lang}")
         self.lang = lang
         self.is_seal = lang == "seal"
         self.device = "cpu"
+        self.small_backend = resolve_small_model_backend(small_backend)
         self.text_detector = TextDetectorONNX(
             model_path=det_model_path,
             device=device,
@@ -391,6 +422,7 @@ class PPOCRv6ONNX:
             box_type="poly" if self.is_seal else "quad",
             use_dilation=False,
             intra_op_num_threads=intra_op_num_threads,
+            small_backend=self.small_backend,
         )
         self.text_recognizer = TextRecognizerONNX(
             model_path=rec_model_path,
@@ -399,6 +431,7 @@ class PPOCRv6ONNX:
             rec_batch_num=rec_batch_num,
             drop_score=drop_score,
             intra_op_num_threads=intra_op_num_threads,
+            small_backend=self.small_backend,
         )
         self.drop_score = 0.0 if self.is_seal else drop_score
         self.enable_merge_det_boxes = enable_merge_det_boxes and not self.is_seal
