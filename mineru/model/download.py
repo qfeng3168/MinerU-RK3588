@@ -111,7 +111,6 @@ class ModelRepo:
 
 
 MODEL_SOURCE_ENV_VAR = "MINERU_MODEL_SOURCE"
-_HUGGINGFACE_MODELS_PAGE_URL = "https://huggingface.co/models"
 _HUGGINGFACE_MODELS_PAGE_TIMEOUT = 3
 _HUGGINGFACE_MODELS_PAGE_MAX_ATTEMPTS = 2
 _REMOTE_MODEL_SOURCES = ("huggingface", "modelscope")
@@ -147,13 +146,24 @@ def _normalize_source(raw_source: object, *, strict: bool) -> str:
     return "auto"
 
 
+def _huggingface_models_page_url() -> str:
+    """返回 HF 模型页探测地址，遵循 HF_ENDPOINT（镜像/代理）配置。
+
+    huggingface_hub 的实际传输认 HF_ENDPOINT，源探测也必须认同一个端点；
+    否则在只能经镜像访问 HF 的网络里，探测必然失败并误回退到 modelscope。
+    """
+    endpoint = os.environ.get("HF_ENDPOINT") or "https://huggingface.co"
+    return f"{endpoint.rstrip('/')}/models"
+
+
 def _resolve_auto_model_source() -> ResolvedRemoteModelSource:
     """Resolve auto source by probing Hugging Face reachability."""
+    probe_url = _huggingface_models_page_url()
     last_error = None
     for _ in range(_HUGGINGFACE_MODELS_PAGE_MAX_ATTEMPTS):
         try:
             response = requests.get(
-                _HUGGINGFACE_MODELS_PAGE_URL,
+                probe_url,
                 timeout=_HUGGINGFACE_MODELS_PAGE_TIMEOUT,
             )
             if 200 <= response.status_code < 400:
@@ -162,7 +172,7 @@ def _resolve_auto_model_source() -> ResolvedRemoteModelSource:
         except Exception as exc:
             last_error = str(exc)
 
-    logger.warning("Failed to access %s: %s, fallback to modelscope.", _HUGGINGFACE_MODELS_PAGE_URL, last_error)
+    logger.warning(f"Failed to access {probe_url}: {last_error}, fallback to modelscope.")
     return "modelscope"
 
 
