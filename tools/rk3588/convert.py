@@ -64,7 +64,8 @@ MODEL_SPECS: dict[str, ModelSpec] = {
     ),
     "pp_doclayout_v2": ModelSpec(
         onnx_path="Layout/PP-DocLayoutV2/inference.onnx",
-        input_size=[[1, 3, 800, 800]],
+        # 图内输入顺序（2026-10-20 验图实证）：im_shape [N,2]、image [N,3,800,800]、scale_factor [N,2]
+        input_size=[[1, 2], [1, 3, 800, 800], [1, 2]],
         output_name="PP-DocLayoutV2_rk3588.rknn",
         hf_rknn_path="Layout/PP-DocLayoutV2_rk3588.rknn",
         onnx_config_path="Layout/PP-DocLayoutV2/inference.yml",
