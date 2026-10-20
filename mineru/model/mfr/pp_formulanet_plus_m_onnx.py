@@ -21,7 +21,8 @@ import yaml
 from loguru import logger
 from tqdm import tqdm
 
-from ..runtime.onnx import ort_session
+from ..runtime.device import resolve_small_model_backend
+from ..runtime.sessions import small_model_session
 from .pp_formulanet.processors import LatexImageFormat, UniMERNetDecode, UniMERNetImgDecode, UniMERNetTestTransform
 
 __all__ = ["PPFormulaNetPlusMONNX", "CPU_BATCH_SIZE"]
@@ -48,10 +49,14 @@ class PPFormulaNetPlusMONNX:
         config_path: str,
         device: Optional[str] = None,
         intra_op_num_threads: int = 0,
+        small_backend: str | None = None,
     ) -> None:
-        """初始化 CPU 公式模型，并复用 Torch Plus-M 的纯 Python 处理器。"""
+        """初始化公式模型，会话类型由 small_backend 决定；处理器复用 Torch Plus-M 的纯 Python 实现。"""
         self.device = "cpu"
-        self.session = ort_session(model_path, device, intra_op_num_threads)
+        self.small_backend = resolve_small_model_backend(small_backend)
+        self.session = small_model_session(
+            self.small_backend, model_path, device=device, intra_op_num_threads=intra_op_num_threads
+        )
         self.input_name = self.session.get_inputs()[0].name
 
         # 从 yml 加载 tokenizer
