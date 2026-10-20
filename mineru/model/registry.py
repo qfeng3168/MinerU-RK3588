@@ -70,7 +70,7 @@ MINERU_RK3588_MODELS = ModelRepo(
     name="MinerU-4_models_rknn",
     download_mode="required_paths",
     repos={
-        "huggingface": "qfeng3168/MinerU-RK3588-models",
+        "huggingface": "q81801/MinerU-RK3588-models",
     },
     paths={
         "pp_doclayout_v2": "Layout/PP-DocLayoutV2_rk3588.rknn",
