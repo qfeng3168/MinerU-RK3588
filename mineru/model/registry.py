@@ -63,9 +63,8 @@ MINERU_4_MODELS_ONNX = ModelRepo(
     },
 )
 
-# RK3588 NPU 模型：同一套小模型的 RKNN 版本加 VLM 的 RKNN/RKLLM 产物。
-# 具名路径与 MINERU_4_MODELS_ONNX 一一对应（*_config 复用同一份 yml），
-# 转换产物由仓库的转换管线产出；huggingface 仓库 id 与 M0 创建的仓库一致。
+# RK3588 NPU 模型：同一套小模型的 RKNN 版本（VLM 产物在独立的
+# MINERU_RK3588_VLM_MODELS，两者同仓发布、就绪互不牵连）。
 MINERU_RK3588_MODELS = ModelRepo(
     name="MinerU-4_models_rknn",
     download_mode="required_paths",
@@ -86,6 +85,18 @@ MINERU_RK3588_MODELS = ModelRepo(
         "slanet_plus": "Table/slanet-plus_rk3588.rknn",
         "unet_structure": "Table/unet_rk3588.rknn",
         "paddle_table_cls": "Table/PP-LCNet_x1_0_table_cls_rk3588.rknn",
+    },
+)
+
+# VLM 的 RK3588 产物独立成仓：与 pipeline 小模型同在一个 HF 仓库发布，
+# 但就绪校验互不牵连——VLM NPU 引擎落地前，pipeline 档位不应被它挡住。
+MINERU_RK3588_VLM_MODELS = ModelRepo(
+    name="MinerU-4_models_rknn_vlm",
+    download_mode="required_paths",
+    repos={
+        "huggingface": "q81801/MinerU-RK3588-models",
+    },
+    paths={
         "vlm_vision": "VLM/qwen2_mineru_vision_672_rk3588.rknn",
         "vlm_llm": "VLM/mineru2.5-pro-1.2b_w8a8_rk3588.rkllm",
     },
@@ -110,6 +121,7 @@ MODEL_REPOS: tuple[ModelRepo, ...] = (
     MINERU_2_5_PRO_2605_1_2B,
     MINERU_2_5_PRO_2605_1_2B_GGUF,
     MINERU_RK3588_MODELS,
+    MINERU_RK3588_VLM_MODELS,
 )
 
 MODEL_REPOS_BY_NAME: dict[str, ModelRepo] = {repo.name: repo for repo in MODEL_REPOS}
