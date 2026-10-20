@@ -91,11 +91,10 @@ jobs:
           git config user.email "ci@invalid"
           git fetch origin ci-results || true
           git checkout ci-results 2>/dev/null || git checkout --orphan ci-results
-          git rm -rf . >/dev/null 2>&1 || true
           mkdir -p results/accept/${{ github.run_id }}
           cp /tmp/accept-report.md results/accept/${{ github.run_id }}/report.md
           cp -r /tmp/accept-out results/accept/${{ github.run_id }}/output 2>/dev/null || true
-          git add results/
+          git add results/accept/${{ github.run_id }}/
           git commit -m "accept report ${{ inputs.pdf }} ${{ inputs.tier }} ${{ github.run_id }}"
           for attempt in 1 2 3 4 5; do
             git rebase --abort 2>/dev/null || true
